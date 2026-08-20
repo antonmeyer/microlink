@@ -581,37 +581,29 @@ static void wireguardif_process_data_message(struct wireguard_device *device, st
 
 								// 5. If the plaintext packet has not been dropped, it is inserted into the receive queue of the wg0 interface.
 								if (dest_ok) {
-									// Send packet to be processed by LWIP. Deliberately
-									// tcpip_input(), NOT ip_input(): this whole function
-									// runs on the caller's own task (whichever task feeds
-									// received WireGuard packets into wireguardif_network_rx,
-									// e.g. ml_wg_mgr in this project - not lwIP's own
-									// tcpip_thread), and ip_input()/ip4_input() is not
-									// thread-safe - it must only ever run on tcpip_thread.
-									// tcpip_input() is lwIP's own thread-safe dispatcher for
-									// exactly this situation (any netif driver feeding a
-									// packet in from its own RX task/ISR instead of from
-									// tcpip_thread itself): it posts the pbuf to
-									// tcpip_thread's mailbox, which then calls ip_input() on
-									// its own thread - the same pattern every other lwIP
-									// netif driver uses. Fixes #17: reproduced on real
-									// hardware as a stack overflow (unrelated call site,
-									// wg_udp_output_cb recursing via the WG netif's own
-									// overly-broad route) that only appeared under real TCP
-									// load through the tunnel, root-caused back to this
-									// exact thread-safety violation letting this function's
-									// inline IP-stack processing race against other tasks'
-									// correct use of the socket API. Calling ip_input()
-									// directly here (rather than through tcpip_input()) is
-									// exactly the anti-pattern lwIP's own docs warn against
-									// for any code that isn't itself running on tcpip_thread.
+									// Send packet to be processed by LWIP via netif->input(),
+									// NOT a hardcoded ip_input(): this whole function runs on
+									// the caller's own task (ml_wg_mgr, not lwIP's tcpip_thread),
+									// and ip_input()/ip4_input() is not thread-safe - it must
+									// only run on tcpip_thread. wg_init_interface() already sets
+									// netif->input = tcpip_input specifically so RX code would
+									// dispatch there instead of entering the IP stack directly -
+									// calling the netif's own configured input function (rather
+									// than hardcoding tcpip_input() here too) actually honors
+									// that existing setup, instead of just swapping one hardcoded
+									// function for another that happens to currently match it.
+									// Root-caused on real hardware (2026-08-20) - matches
+									// CamM2325/microlink#17 exactly; a stale comment here used to
+									// (incorrectly) claim ip_input()
+									// already dispatches to tcpip_thread internally, which it
+									// does not.
 									WG_DEBUG("[WG_RX_IP] Passing %u bytes to IP layer\n", (unsigned)pbuf->tot_len);
-									err_t tcpip_err = tcpip_input(pbuf, device->netif);
-									if (tcpip_err == ERR_OK) {
-										// pbuf ownership transferred to tcpip_thread
+									err_t input_err = device->netif->input(pbuf, device->netif);
+									if (input_err == ERR_OK) {
+										// pbuf ownership transferred to netif->input()
 										pbuf = NULL;
 									} else {
-										WG_DEBUG("[WG_RX_IP] tcpip_input() failed: %d (mailbox full?), dropping\n", tcpip_err);
+										WG_DEBUG("[WG_RX_IP] netif->input() failed: %d, dropping\n", input_err);
 										// pbuf stays non-NULL - freed by this function's
 										// normal cleanup path below
 									}
