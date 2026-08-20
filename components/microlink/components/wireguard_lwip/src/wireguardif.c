@@ -537,11 +537,40 @@ static void wireguardif_process_data_message(struct wireguard_device *device, st
 
 								// 5. If the plaintext packet has not been dropped, it is inserted into the receive queue of the wg0 interface.
 								if (dest_ok) {
-									// Send packet to be processed by LWIP
+									// Send packet to be processed by LWIP. Deliberately
+									// tcpip_input(), NOT ip_input(): this whole function
+									// runs on the caller's own task (whichever task feeds
+									// received WireGuard packets into wireguardif_network_rx,
+									// e.g. ml_wg_mgr in this project - not lwIP's own
+									// tcpip_thread), and ip_input()/ip4_input() is not
+									// thread-safe - it must only ever run on tcpip_thread.
+									// tcpip_input() is lwIP's own thread-safe dispatcher for
+									// exactly this situation (any netif driver feeding a
+									// packet in from its own RX task/ISR instead of from
+									// tcpip_thread itself): it posts the pbuf to
+									// tcpip_thread's mailbox, which then calls ip_input() on
+									// its own thread - the same pattern every other lwIP
+									// netif driver uses. Fixes #17: reproduced on real
+									// hardware as a stack overflow (unrelated call site,
+									// wg_udp_output_cb recursing via the WG netif's own
+									// overly-broad route) that only appeared under real TCP
+									// load through the tunnel, root-caused back to this
+									// exact thread-safety violation letting this function's
+									// inline IP-stack processing race against other tasks'
+									// correct use of the socket API. Calling ip_input()
+									// directly here (rather than through tcpip_input()) is
+									// exactly the anti-pattern lwIP's own docs warn against
+									// for any code that isn't itself running on tcpip_thread.
 									WG_DEBUG("[WG_RX_IP] Passing %u bytes to IP layer\n", (unsigned)pbuf->tot_len);
-									ip_input(pbuf, device->netif);
-									// pbuf is owned by IP layer now
-									pbuf = NULL;
+									err_t tcpip_err = tcpip_input(pbuf, device->netif);
+									if (tcpip_err == ERR_OK) {
+										// pbuf ownership transferred to tcpip_thread
+										pbuf = NULL;
+									} else {
+										WG_DEBUG("[WG_RX_IP] tcpip_input() failed: %d (mailbox full?), dropping\n", tcpip_err);
+										// pbuf stays non-NULL - freed by this function's
+										// normal cleanup path below
+									}
 								} else {
 									WG_DEBUG("[WG_RX_IP] DROPPED: dest_ok=false\n");
 								}
