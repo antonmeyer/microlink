@@ -1631,7 +1631,11 @@ void ml_wg_mgr_task(void *arg) {
             wireguardif_periodic((struct netif *)ml->wg_netif);
             uint64_t dt = ml_get_time_ms() - t0;
             last_wg_periodic_ms = now;
-            ESP_LOGI(TAG, "wireguardif_periodic: %llu ms", (unsigned long long)dt);
+            /* Proof-of-life timing for this task's own periodic sweep, not a
+             * reportable event - almost always 0ms (nothing needed
+             * attention). Belongs at Debug, same reasoning as ml_derp.c's
+             * HEARTBEAT line: INFO is for things that changed. */
+            ESP_LOGD(TAG, "wireguardif_periodic: %llu ms", (unsigned long long)dt);
         }
 
         /* Periodic DISCO probes (every 1s check) */

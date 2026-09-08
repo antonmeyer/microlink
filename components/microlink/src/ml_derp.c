@@ -507,9 +507,11 @@ void ml_derp_tx_task(void *arg) {
          * only" filter, which is presumably why it ended up here during
          * original bring-up debugging, but it means every consumer sees
          * a "warning" every 5 seconds forever, indefinitely, even on a
-         * perfectly healthy connection. Moved to LOGI where it belongs. */
+         * perfectly healthy connection. A routine "still here, nothing
+         * new" pulse belongs at Debug, not Info - INFO is for things that
+         * actually changed, not proof of life. */
         if (loop_start - last_heartbeat_ms > 5000) {
-            ESP_LOGI(TAG, "HEARTBEAT: loop=%lu conn=%d rx=%lu tx=%lu stack_free=%lu",
+            ESP_LOGD(TAG, "HEARTBEAT: loop=%lu conn=%d rx=%lu tx=%lu stack_free=%lu",
                      (unsigned long)loop_count, ml->derp.connected,
                      (unsigned long)frames_rx, (unsigned long)frames_tx,
                      (unsigned long)uxTaskGetStackHighWaterMark(NULL));
