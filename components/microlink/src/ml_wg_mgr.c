@@ -186,9 +186,16 @@ static err_t wg_udp_output_cb(uint32_t dest_ip, uint16_t dest_port,
     microlink_t *ml = (microlink_t *)ctx;
     if (!ml) return ERR_CONN;
 
-    /* Log WG packets sent via direct UDP */
+    /* Log WG packets sent via direct UDP.
+     * Was ESP_LOGI - fires on *every* packet sent over the tunnel
+     * (handshakes, keepalives, and every real data-plane packet carrying
+     * actual tunneled traffic). At Info, this alone can make the log look
+     * like every packet is being traced under any real traffic load. The
+     * dedicated handshake-initiation log has its own properly-scoped LOGI
+     * elsewhere (gated on message type 0x01) - this unconditional one is
+     * Debug material. */
     uint32_t ip_host = ntohl(dest_ip);
-    ESP_LOGI(TAG, "WG UDP TX: %d bytes -> %d.%d.%d.%d:%d type=%d",
+    ESP_LOGD(TAG, "WG UDP TX: %d bytes -> %d.%d.%d.%d:%d type=%d",
              (int)len,
              (int)((ip_host >> 24) & 0xFF), (int)((ip_host >> 16) & 0xFF),
              (int)((ip_host >> 8) & 0xFF), (int)(ip_host & 0xFF),
@@ -1145,7 +1152,10 @@ static void process_disco_packet(microlink_t *ml, const ml_rx_packet_t *pkt) {
  * ========================================================================== */
 
 static void process_wg_packet(microlink_t *ml, const ml_rx_packet_t *pkt) {
-    ESP_LOGI(TAG, "WG RX: %d bytes, via_derp=%d, type=%d, from=%02x%02x%02x%02x",
+    /* Was ESP_LOGI - the RX counterpart of wg_udp_output_cb()'s own TX
+     * line, same "every packet, not just handshakes" issue (this runs
+     * before the packet is even classified by type). */
+    ESP_LOGD(TAG, "WG RX: %d bytes, via_derp=%d, type=%d, from=%02x%02x%02x%02x",
              (int)pkt->len, pkt->via_derp,
              pkt->len >= 4 ? pkt->data[0] : -1,
              pkt->src_pubkey[0], pkt->src_pubkey[1], pkt->src_pubkey[2], pkt->src_pubkey[3]);
