@@ -245,22 +245,11 @@ typedef struct {
     char hostname[64];
     bool active;
 
-    /* Endpoints - the per-address ping-tracking equivalent of real
-     * Tailscale's endpointState map (endpoint.go). last_ping_ms mirrors
-     * that struct's lastPing field: 0 means "never pinged", otherwise
-     * checked against ML_DISCO_PING_INTERVAL_MS before sending another
-     * probe to this specific address, unless a caller forces a fresh
-     * round (see disco_ping_round() in ml_wg_mgr.c). Without this, every
-     * trigger (including a received CallMeMaybe) pinged every known
-     * endpoint completely unconditionally, with no per-address memory of
-     * a probe already in flight - real Tailscale's handleCallMeMaybe()
-     * reuses/updates this same per-endpoint state rather than registering
-     * independent anonymous probes per endpoint per call. */
+    /* Endpoints */
     struct {
         uint32_t ip;
         uint16_t port;
         bool is_ipv6;
-        uint64_t last_ping_ms;
     } endpoints[ML_MAX_ENDPOINTS];
     int endpoint_count;
     uint16_t derp_region;
