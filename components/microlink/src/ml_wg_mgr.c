@@ -962,33 +962,22 @@ static void process_disco_pong(microlink_t *ml, const ml_rx_packet_t *pkt,
                              (int)((pkt->src_ip >> 24) & 0xFF), (int)((pkt->src_ip >> 16) & 0xFF),
                              (int)((pkt->src_ip >> 8) & 0xFF), (int)(pkt->src_ip & 0xFF),
                              (int)pkt->src_port, p->hostname);
-                    /* First direct path discovery — send a one-shot handshake
-                     * via direct UDP. Do NOT use wireguardif_connect() which
-                     * sets peer->active=true and causes infinite handshake
-                     * retries (every 5s) when the peer has us trimmed.
-                     * Instead, just fire a single handshake init. If the peer
-                     * has us configured, it will respond and establish session.
-                     * If not, we stop and wait for them to initiate. */
-                    if (!p->tried_initial_handshake) {
-                        p->tried_initial_handshake = true;
-                        /* Store endpoint so wireguardif_connect sends to it */
-                        wireguardif_update_endpoint(netif, (u8_t)p->wg_peer_index,
-                                                     &ep_ip, pkt->src_port);
-                        /* Fire one handshake init but don't leave peer active.
-                         * wireguardif_connect sets active=true internally, so
-                         * we immediately clear it after to prevent retries. */
-                        wireguardif_connect(netif, (u8_t)p->wg_peer_index);
-                        /* Clear active to prevent infinite retry loop.
-                         * If handshake succeeds, the response handler will
-                         * establish the session regardless of active flag. */
-                        {
-                            struct wireguard_device *dev = (struct wireguard_device *)netif->state;
-                            if (dev && p->wg_peer_index < WIREGUARD_MAX_PEERS) {
-                                dev->peers[p->wg_peer_index].active = false;
-                            }
-                        }
-                        ESP_LOGI(TAG, "WG one-shot handshake to %s (first direct path)", p->hostname);
-                    }
+                    /* This used to fire exactly one handshake init via a
+                     * one-shot wireguardif_connect()-then-immediately-
+                     * clear-active workaround, specifically to dodge
+                     * wireguard_lwip retrying every 5s forever if the peer
+                     * had us trimmed. That workaround had its own bug: if
+                     * this single handshake-init packet was lost, the peer
+                     * stayed stranded on DERP forever - the one-shot latch
+                     * never reset and this branch never ran again for that
+                     * peer, even on a later PONG re-offering the same
+                     * direct path. Since wireguard_lwip itself now gives up
+                     * after MAX_TIMER_HANDSHAKES attempts (~REKEY_ATTEMPT_TIME
+                     * seconds, see wireguard.h), a plain wireguardif_connect()
+                     * gets real, bounded retries instead of exactly one
+                     * unretried shot. */
+                    wireguardif_connect(netif, (u8_t)p->wg_peer_index);
+                    ESP_LOGI(TAG, "WG handshake initiated to %s (direct path discovered)", p->hostname);
                 }
             }
         }

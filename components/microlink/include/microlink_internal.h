@@ -268,9 +268,6 @@ typedef struct {
 
     /* WireGuard peer index in wireguard-lwip */
     int wg_peer_index;
-
-    /* On-demand handshake: tried once on first DISCO direct path discovery */
-    bool tried_initial_handshake;
 } ml_peer_t;
 
 /* ============================================================================
