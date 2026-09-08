@@ -59,6 +59,18 @@ extern "C" {
 #define ML_TASK_WG_MGR_PRIO     7
 #define ML_TASK_WG_MGR_CORE     1
 
+// Was a bare `configMAX_PRIORITIES - 2` literal at the ml_udp.c call
+// site - numerically identical to ESP-IDF's own ESP_TASK_BT_CONTROLLER_PRIO
+// (esp_task.h), the reserved priority tier for the Bluetooth radio
+// controller's hard-real-time servicing task. There's no radio-timing
+// requirement for draining a 4-deep UDP receive queue into a callback;
+// this priority just needs to beat this project's other MicroLink tasks
+// reliably, matching the ML_TASK_WG_MGR tier rather than colliding with
+// a reserved system-level slot that can starve everything below it
+// (ml_coord's control-plane connection included) for as long as the
+// receive callback runs.
+#define ML_TASK_UDP_RX_PRIO     ML_TASK_WG_MGR_PRIO
+
 /* Queue depths */
 #define ML_DERP_TX_QUEUE_DEPTH  16
 #define ML_DISCO_RX_QUEUE_DEPTH 8
